@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -26,8 +27,14 @@ fun AccesoWf() {
     val contexto = LocalContext.current
     val wifiViewModel: WifiViewModel = viewModel()
 
+    var mostrarDialogo by remember { mutableStateOf(false) }
+    var redSeleccionada by remember { mutableStateOf<RedWifi?>(null) }
+    var contrasena by remember { mutableStateOf("") }
+
     val listaRedes: List<RedWifi> by wifiViewModel.listaRedes.collectAsState()
     val escaneando by wifiViewModel.escaneando.collectAsState()
+
+    val redConectada by rememberUpdatedState(newValue = wifiViewModel.obtenerRedConectada())
 
     val permisos = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -41,6 +48,43 @@ fun AccesoWf() {
         if (concedidos) {
             wifiViewModel.escanearRedes()
         }
+    }
+
+    if (mostrarDialogo && redSeleccionada != null) {
+        AlertDialog(
+            onDismissRequest = { mostrarDialogo = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    wifiViewModel.conectarARedProtegida(redSeleccionada!!.ssid, contrasena)
+                    mostrarDialogo = false
+                    contrasena = ""
+                }) {
+                    Text("Conectar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    mostrarDialogo = false
+                    contrasena = ""
+                }) {
+                    Text("Cancelar")
+                }
+            },
+            title = { Text("Conexión protegida") },
+            text = {
+                Column {
+                    Text("Introduce la contraseña para ${redSeleccionada!!.ssid}")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = contrasena,
+                        onValueChange = { contrasena = it },
+                        label = { Text("Contraseña") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                }
+            }
+        )
     }
 
     Column(
@@ -75,6 +119,30 @@ fun AccesoWf() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        redConectada?.let {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0D47A1))
+                    .padding(16.dp)
+            ) {
+                Text(text = "Conectado a:", color = Color.LightGray, fontSize = 14.sp)
+                Text(text = it.ssid, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(text = "Señal: ${it.nivelSenal} dBm", color = Color.White, fontSize = 14.sp)
+
+                // Nuevos datos (opcional: puedes crear más campos en RedWifi si los quieres permanentes)
+                val infoConexion = wifiViewModel.obtenerInfoConexion()
+
+                infoConexion.forEach { (clave, valor) ->
+                    Text(text = "$clave: $valor", color = Color.White, fontSize = 14.sp)
+                }
+
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+
         when {
             escaneando -> {
                 CircularProgressIndicator(color = Color.White, modifier = Modifier.padding(16.dp))
@@ -104,10 +172,19 @@ fun AccesoWf() {
                             Text(text = "Nivel de señal: ${red.nivelSenal} dBm", color = Color.White)
 
                             if (!red.protegida) {
-                                Spacer(modifier = Modifier.height(8.dp))
                                 Button(
                                     onClick = {
                                         wifiViewModel.conectarARedAbierta(red.ssid)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+                                ) {
+                                    Text("Conectar", color = Color.Black)
+                                }
+                            } else {
+                                Button(
+                                    onClick = {
+                                        redSeleccionada = red
+                                        mostrarDialogo = true
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color.White)
                                 ) {
