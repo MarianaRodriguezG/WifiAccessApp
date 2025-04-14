@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.vac.wifiacessoapp"
-        minSdk = 24
+        minSdk = 29
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -55,22 +55,20 @@ android {
 }
 
 dependencies {
-    // Core y Jetpack Compose
+    // Core y ciclo de vida
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-    // BOM de Compose (controla versiones compatibles)
+    // Jetpack Compose
     implementation(platform(libs.androidx.compose.bom))
-
-    // UI Compose
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
-
-
+    // Activity Compose
+    implementation(libs.androidx.activity.compose)
 
     // Testing
     testImplementation(libs.junit)
@@ -79,7 +77,6 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
 
-    // Debugging
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
