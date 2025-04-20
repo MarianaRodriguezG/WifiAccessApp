@@ -1,4 +1,4 @@
-// ✅ WifiViewModel.kt actualizado
+// ✅ WifiViewModel.kt
 package com.vac.wifiacessoapp.viewmodel
 
 import android.app.Application
