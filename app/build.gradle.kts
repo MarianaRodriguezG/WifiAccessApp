@@ -72,6 +72,7 @@ dependencies {
     // ViewModel y LiveData
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.livedata.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose) // 👈 Agregado para poder usar viewModel() en @Composable
 
     // Testing
     testImplementation(libs.junit)

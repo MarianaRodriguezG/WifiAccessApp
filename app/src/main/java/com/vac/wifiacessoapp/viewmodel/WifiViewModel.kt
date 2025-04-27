@@ -1,6 +1,6 @@
-// ✅ WifiViewModel.kt
 package com.vac.wifiacessoapp.viewmodel
 
+import android.Manifest
 import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
@@ -10,6 +10,7 @@ import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.text.format.Formatter
 import android.util.Log
+import androidx.annotation.RequiresPermission
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vac.wifiacessoapp.modelo.RedWifi
@@ -32,29 +33,42 @@ class WifiViewModel(application: Application) : AndroidViewModel(application) {
     private val _errorConexion = MutableStateFlow<String?>(null)
     val errorConexion = _errorConexion.asStateFlow()
 
+    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION])
     fun escanearRedes() {
         viewModelScope.launch {
             _escaneando.value = true
 
             if (!wifiManager.isWifiEnabled) {
-                Log.d("WifiViewModel", "Wi-Fi desactivado. Activando...")
+                Log.d("WifiViewModel", "Wi-Fi desactivado. No se puede escanear.")
+                _escaneando.value = false
                 return@launch
             }
 
-            val inicio = wifiManager.startScan()
-            if (inicio) {
-                Log.d("WifiViewModel", "Escaneo iniciado correctamente")
-            } else {
-                Log.e("WifiViewModel", "Error al iniciar escaneo de redes")
+            try {
+                val inicio = wifiManager.startScan()
+                if (inicio) {
+                    Log.d("WifiViewModel", "Escaneo iniciado correctamente")
+                } else {
+                    Log.e("WifiViewModel", "Error al iniciar escaneo de redes")
+                }
+            } catch (e: SecurityException) {
+                Log.e("WifiViewModel", "Permiso insuficiente para escanear redes", e)
+                _errorConexion.value = "No se pudo escanear redes por falta de permisos."
+                _escaneando.value = false
+                return@launch
             }
 
             delay(2000)
 
-            val resultados = wifiManager.scanResults
+            val resultados = try {
+                wifiManager.scanResults
+            } catch (e: SecurityException) {
+                emptyList()
+            }
 
             val redesConvertidas = resultados.map { scan ->
                 RedWifi(
-                    ssid = scan.SSID,
+                    ssid = scan.SSID.orEmpty(),
                     nivelSenal = scan.level,
                     protegida = scan.capabilities.contains("WPA") || scan.capabilities.contains("WEP"),
                     tipoSeguridad = scan.capabilities
@@ -147,5 +161,10 @@ class WifiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun limpiarError() {
         _errorConexion.value = null
+    }
+    fun activarWifi(contexto: Context) {
+        val intent = android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
+        intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+        contexto.startActivity(intent)
     }
 }

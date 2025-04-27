@@ -1,10 +1,8 @@
-// ✅ AccesoWf.kt actualizado
+// AccesoWf.kt
 package com.vac.wifiacessoapp.vista
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -24,7 +22,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vac.wifiacessoapp.modelo.RedWifi
 import com.vac.wifiacessoapp.viewmodel.WifiViewModel
-import kotlinx.coroutines.delay
 
 @Composable
 fun AccesoWf() {
@@ -37,16 +34,10 @@ fun AccesoWf() {
 
     val listaRedes by wifiViewModel.listaRedes.collectAsState()
     val escaneando by wifiViewModel.escaneando.collectAsState()
-    val redConectada by rememberUpdatedState(wifiViewModel.obtenerRedConectada())
     val errorConexion by wifiViewModel.errorConexion.collectAsState()
-    var wifiDisponible by remember { mutableStateOf(wifiViewModel.estaWifiActivado()) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            wifiDisponible = wifiViewModel.estaWifiActivado()
-            delay(1500)
-        }
-    }
+    val wifiActivado = wifiViewModel.estaWifiActivado()
+    val redConectada = wifiViewModel.obtenerRedConectada()
+    val infoConexion = wifiViewModel.obtenerInfoConexion()
 
     val permisos = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -62,13 +53,12 @@ fun AccesoWf() {
         }
     }
 
-    val lanzadorAjustes = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { }
-
     if (mostrarDialogo && redSeleccionada != null) {
         AlertDialog(
-            onDismissRequest = { mostrarDialogo = false },
+            onDismissRequest = {
+                mostrarDialogo = false
+                wifiViewModel.limpiarError()
+            },
             confirmButton = {
                 TextButton(onClick = {
                     wifiViewModel.conectarARedProtegida(redSeleccionada!!.ssid, contrasena)
@@ -85,19 +75,11 @@ fun AccesoWf() {
                     Text("Cancelar")
                 }
             },
-            title = { Text("Conexión protegida") },
+            title = { Text("Conexión a red protegida") },
             text = {
                 Column {
                     Text("Introduce la contraseña para ${redSeleccionada!!.ssid}")
                     Spacer(modifier = Modifier.height(8.dp))
-                    if (errorConexion != null) {
-                        Text(
-                            text = errorConexion ?: "",
-                            color = Color.Red,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    }
                     OutlinedTextField(
                         value = contrasena,
                         onValueChange = { contrasena = it },
@@ -105,6 +87,13 @@ fun AccesoWf() {
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation()
                     )
+                    if (errorConexion != null) {
+                        Text(
+                            text = errorConexion!!,
+                            color = Color.Red,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
                 }
             }
         )
@@ -142,7 +131,7 @@ fun AccesoWf() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (!wifiDisponible) {
+        if (!wifiActivado) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -155,82 +144,76 @@ fun AccesoWf() {
                     fontWeight = FontWeight.Bold
                 )
                 Button(
-                    onClick = {
-                        val intent = Intent(Settings.ACTION_WIFI_SETTINGS)
-                        lanzadorAjustes.launch(intent)
-                    },
+                    onClick = { wifiViewModel.activarWifi(contexto) },
                     modifier = Modifier.padding(top = 8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White)
                 ) {
-                    Text("Ir a ajustes de Wi-Fi", color = Color.Black)
+                    Text("Activar Wi-Fi", color = Color.Black)
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        if (wifiDisponible) {
-            redConectada?.let {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0D47A1))
-                        .padding(16.dp)
-                ) {
-                    Text("Conectado a:", color = Color.LightGray)
-                    Text(it.ssid, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Text("Señal: ${it.nivelSenal} dBm", color = Color.White)
-
-                    val infoConexion = wifiViewModel.obtenerInfoConexion()
-                    infoConexion.forEach { (clave, valor) ->
-                        Text("$clave: $valor", color = Color.White, fontSize = 14.sp)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
+        redConectada?.let {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0D47A1))
+                    .padding(16.dp)
+            ) {
+                Text("Conectado a: ${it.ssid}", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Nivel: ${it.nivelSenal} dBm", color = Color.White)
             }
+            Spacer(modifier = Modifier.height(16.dp))
 
-            when {
-                escaneando -> {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.padding(16.dp))
-                }
-                listaRedes.isEmpty() -> {
-                    Text("No hay redes disponibles", color = Color.White, modifier = Modifier.padding(16.dp))
-                }
-                else -> {
-                    LazyColumn {
-                        items(listaRedes) { red ->
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp)
-                                    .background(Color(0xFF0D47A1))
-                                    .padding(12.dp)
-                            ) {
-                                Text("SSID: ${red.ssid}", color = Color.White)
-                                Text(
-                                    text = if (red.protegida) "🔒 Red protegida" else "🔓 Red abierta",
-                                    color = Color.LightGray
-                                )
-                                Text("Nivel de señal: ${red.nivelSenal} dBm", color = Color.White)
+            infoConexion.forEach { (clave, valor) ->
+                Text("$clave: $valor", color = Color.LightGray)
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
-                                if (!red.protegida) {
-                                    Button(
-                                        onClick = { wifiViewModel.conectarARedAbierta(red.ssid) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color.White)
-                                    ) {
-                                        Text("Conectar", color = Color.Black)
-                                    }
-                                } else {
-                                    Button(
-                                        onClick = {
-                                            redSeleccionada = red
-                                            mostrarDialogo = true
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color.White)
-                                    ) {
-                                        Text("Conectar", color = Color.Black)
-                                    }
+        when {
+            escaneando -> {
+                CircularProgressIndicator(color = Color.White, modifier = Modifier.padding(16.dp))
+            }
+            listaRedes.isEmpty() -> {
+                Text("No hay redes disponibles", color = Color.White, modifier = Modifier.padding(16.dp))
+            }
+            else -> {
+                LazyColumn {
+                    items(listaRedes) { red ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                                .background(Color(0xFF0D47A1))
+                                .padding(12.dp)
+                        ) {
+                            Text(text = "SSID: ${red.ssid}", color = Color.White)
+                            Text(
+                                text = if (red.protegida) "🔒 Red protegida" else "🔓 Red abierta",
+                                color = Color.LightGray
+                            )
+                            Text(text = "Nivel de señal: ${red.nivelSenal} dBm", color = Color.White)
+
+                            if (!red.protegida) {
+                                Button(
+                                    onClick = {
+                                        wifiViewModel.conectarARedAbierta(red.ssid)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+                                ) {
+                                    Text("Conectar", color = Color.Black)
+                                }
+                            } else {
+                                Button(
+                                    onClick = {
+                                        redSeleccionada = red
+                                        mostrarDialogo = true
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+                                ) {
+                                    Text("Conectar", color = Color.Black)
                                 }
                             }
                         }
