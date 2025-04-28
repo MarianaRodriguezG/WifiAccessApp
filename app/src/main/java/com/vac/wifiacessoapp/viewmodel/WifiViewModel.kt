@@ -1,99 +1,162 @@
 package com.vac.wifiacessoapp.viewmodel
 
 import android.Manifest
+import android.app.Application
 import android.content.Context
 import android.content.Intent
-import android.net.wifi.ScanResult
+import android.location.LocationManager
+import android.net.*
 import android.net.wifi.WifiManager
+import android.net.wifi.WifiNetworkSpecifier
 import android.provider.Settings
+import android.text.format.Formatter
+import android.util.Log
 import androidx.annotation.RequiresPermission
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.AndroidViewModel
 import com.vac.wifiacessoapp.modelo.RedWifi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.asStateFlow
 
-class WifiViewModel(private val context: Context) : ViewModel() {
+class WifiViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+    private val contexto: Context = application.applicationContext
+    private val wifiManager = contexto.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
-    // Estado de escaneo
-    private val _escaneando = MutableStateFlow(false)
-    val escaneando: StateFlow<Boolean> = _escaneando
-
-    // Lista de redes disponibles
     private val _listaRedes = MutableStateFlow<List<RedWifi>>(emptyList())
-    val listaRedes: StateFlow<List<RedWifi>> = _listaRedes
+    val listaRedes = _listaRedes.asStateFlow()
 
-    // Estado del WiFi
-    private val _wifiActivo = MutableStateFlow(wifiManager.isWifiEnabled)
-    val wifiActivo: StateFlow<Boolean> = _wifiActivo
+    private val _escaneando = MutableStateFlow(false)
+    val escaneando = _escaneando.asStateFlow()
 
-    // Red actualmente conectada
+    private val _wifiActivo = MutableStateFlow(false)
+    val wifiActivo = _wifiActivo.asStateFlow()
+
+    private val _ubicacionActiva = MutableStateFlow(false)
+    val ubicacionActiva = _ubicacionActiva.asStateFlow()
+
     private val _redConectada = MutableStateFlow<RedWifi?>(null)
-    val redConectada: StateFlow<RedWifi?> = _redConectada
+    val redConectada = _redConectada.asStateFlow()
 
-    // Escanear redes WiFi disponibles
-    @RequiresPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-    fun escanearRedes() {
-        viewModelScope.launch {
-            _escaneando.value = true
-            val resultados = wifiManager.scanResults ?: emptyList()
-            val redes = resultados.map { scanResultToRedWifi(it) }
-            _listaRedes.value = redes
-            _escaneando.value = false
+    init {
+        actualizarEstadoWifi()
+    }
+
+    fun actualizarEstadoWifi() {
+        _wifiActivo.value = wifiManager.isWifiEnabled
+
+        val locationManager = contexto.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        _ubicacionActiva.value = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true
+
+        if (_wifiActivo.value) {
+            actualizarRedConectada()
+        } else {
+            _redConectada.value = null
+            _listaRedes.value = emptyList()
         }
     }
 
-    // Limpiar la lista de redes cuando el WiFi está apagado
     fun limpiarRedes() {
         _listaRedes.value = emptyList()
     }
 
-    // Método para abrir los ajustes Wi-Fi
-    fun abrirAjustesWifi(context: Context) {
-        val intent = Intent(Settings.ACTION_WIFI_SETTINGS)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION])
+    fun escanearRedes() {
+        if (!wifiManager.isWifiEnabled) {
+            _escaneando.value = false
+            return
+        }
+
+        try {
+            wifiManager.startScan()
+            _escaneando.value = true
+
+            // No delay aquí porque el RecyclerView se va a actualizar automáticamente
+            val resultados = wifiManager.scanResults
+
+            _listaRedes.value = resultados.map { scan ->
+                RedWifi(
+                    ssid = scan.SSID.orEmpty(),
+                    nivelSenal = scan.level,
+                    protegida = scan.capabilities.contains("WPA") || scan.capabilities.contains("WEP"),
+                    tipoSeguridad = scan.capabilities
+                )
+            }
+        } catch (e: SecurityException) {
+            Log.e("WifiViewModel", "Error al escanear redes: ${e.localizedMessage}")
+            _escaneando.value = false
+        }
     }
 
-    // Actualizar estado del Wi-Fi (hacerlo público)
-    fun actualizarEstadoWifi() {
-        _wifiActivo.value = wifiManager.isWifiEnabled
-        obtenerRedConectada()
+    fun conectarARedProtegida(ssid: String, password: String) {
+        val specifier = WifiNetworkSpecifier.Builder()
+            .setSsid(ssid)
+            .setWpa2Passphrase(password)
+            .build()
+
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .setNetworkSpecifier(specifier)
+            .build()
+
+        val connectivityManager = contexto.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        connectivityManager.requestNetwork(request, object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                connectivityManager.bindProcessToNetwork(network)
+                actualizarRedConectada()
+            }
+
+            override fun onUnavailable() {
+                Log.e("WifiViewModel", "No se pudo conectar a red protegida: $ssid")
+            }
+        })
     }
 
-    // Obtener la red conectada actual
-    fun obtenerRedConectada() {
+    fun conectarARedAbierta(ssid: String) {
+        val specifier = WifiNetworkSpecifier.Builder()
+            .setSsid(ssid)
+            .build()
+
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .setNetworkSpecifier(specifier)
+            .build()
+
+        val connectivityManager = contexto.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        connectivityManager.requestNetwork(request, object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                connectivityManager.bindProcessToNetwork(network)
+                actualizarRedConectada()
+            }
+
+            override fun onUnavailable() {
+                Log.e("WifiViewModel", "No se pudo conectar a red abierta: $ssid")
+            }
+        })
+    }
+
+    private fun actualizarRedConectada() {
         val info = wifiManager.connectionInfo
-        val ssid = info.ssid?.replace("\"", "") ?: ""
-        val nivel = WifiManager.calculateSignalLevel(info.rssi, 100)
-
-        if (ssid.isNotBlank() && ssid != "<unknown ssid>") {
+        if (info != null && info.networkId != -1) {
             _redConectada.value = RedWifi(
-                ssid = ssid,
-                nivelSenal = nivel,
-                protegida = true, // Suponemos que si estás conectado, es protegida
-                tipoSeguridad = "WPA/WPA2" // Asumimos tipo seguro por defecto
+                ssid = info.ssid.removeSurrounding("\""),
+                nivelSenal = info.rssi,
+                protegida = true,
+                tipoSeguridad = "Desconocido"
             )
-        } else {
-            _redConectada.value = null
         }
     }
 
-    // Helper: convertir ScanResult a RedWifi
-    private fun scanResultToRedWifi(scan: ScanResult): RedWifi {
-        val tipoSeguridad = when {
-            scan.capabilities.contains("WPA") -> "WPA"
-            scan.capabilities.contains("WEP") -> "WEP"
-            else -> "Abierta"
+    fun abrirAjustesWifi(contexto: Context) {
+        val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
-        return RedWifi(
-            ssid = scan.SSID ?: "",
-            nivelSenal = WifiManager.calculateSignalLevel(scan.level, 100),
-            protegida = tipoSeguridad != "Abierta",
-            tipoSeguridad = tipoSeguridad
-        )
+        contexto.startActivity(intent)
+    }
+
+    fun abrirAjustesUbicacion(contexto: Context) {
+        val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        contexto.startActivity(intent)
     }
 }
