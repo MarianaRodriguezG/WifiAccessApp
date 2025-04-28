@@ -1,37 +1,20 @@
 package com.vac.wifiacessoapp.data
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.Flow
 
 class RedGuardadaRepository(private val dao: RedGuardadaDao) {
 
-    suspend fun guardarRed(red: RedGuardada) {
-        withContext(Dispatchers.IO) {
-            dao.insertarRed(red)
-        }
+    val redesGuardadas: Flow<List<RedGuardada>> = dao.obtenerTodas()
+
+    suspend fun insertar(red: RedGuardada) {
+        dao.insertarRed(red)
     }
 
-    suspend fun obtenerHistorial(): List<RedGuardada> {
-        return withContext(Dispatchers.IO) {
-            dao.obtenerHistorial()
-        }
+    suspend fun eliminar(red: RedGuardada) {
+        dao.eliminarRed(red)
     }
 
-    suspend fun buscarRed(ssid: String): RedGuardada? {
-        return withContext(Dispatchers.IO) {
-            dao.buscarPorSsid(ssid)
-        }
-    }
-
-    suspend fun eliminarRed(red: RedGuardada) {
-        withContext(Dispatchers.IO) {
-            dao.eliminarRed(red)
-        }
-    }
-
-    suspend fun borrarTodo() {
-        withContext(Dispatchers.IO) {
-            dao.borrarTodo()
-        }
+    suspend fun eliminarTodas() {
+        dao.eliminarTodas()
     }
 }

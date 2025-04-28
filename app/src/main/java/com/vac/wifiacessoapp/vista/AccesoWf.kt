@@ -8,6 +8,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -33,6 +35,7 @@ fun AccesoWf(viewModel: WifiViewModel) {
     val ubicacionActiva by viewModel.ubicacionActiva.collectAsState()
     val listaRedes by viewModel.listaRedes.collectAsState()
     val redConectada by viewModel.redConectada.collectAsState()
+    val historialRedes by viewModel.historialRedes.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -54,6 +57,7 @@ fun AccesoWf(viewModel: WifiViewModel) {
             LifecycleEventObserver { _, evento ->
                 if (evento == Lifecycle.Event.ON_RESUME) {
                     viewModel.actualizarEstadoWifi()
+                    viewModel.cargarHistorial() // 🔥 Cargar historial cada vez que regresa la app
                 }
             }
         )
@@ -178,45 +182,86 @@ fun AccesoWf(viewModel: WifiViewModel) {
                     }
                 }
             }
-        }
 
-        if (mostrarDialogo && redSeleccionada != null) {
-            AlertDialog(
-                onDismissRequest = { mostrarDialogo = false },
-                title = { Text("Conectar a ${redSeleccionada!!.ssid}") },
-                text = {
-                    OutlinedTextField(
-                        value = contrasenaIngresada,
-                        onValueChange = { contrasenaIngresada = it },
-                        label = { Text("Contraseña") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        if (contrasenaIngresada.isBlank()) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Introduce una contraseña válida.")
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Historial de redes guardadas",
+                fontSize = 20.sp,
+                color = Color.White
+            )
+
+            if (historialRedes.isEmpty()) {
+                Text("No hay redes guardadas aún.", color = Color.LightGray)
+            } else {
+                LazyColumn {
+                    items(historialRedes) { redGuardada ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(text = redGuardada.ssid, color = Color.White)
+                                Text(text = "Última conexión: ${redGuardada.fechaConexion}", color = Color.LightGray)
                             }
-                        } else {
-                            viewModel.conectarARedProtegida(redSeleccionada!!.ssid, contrasenaIngresada)
-                            mostrarDialogo = false
-                            contrasenaIngresada = ""
+                            IconButton(onClick = { viewModel.olvidarRed(redGuardada) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color.White)
+                            }
                         }
-                    }) {
-                        Text("Conectar")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        mostrarDialogo = false
-                        contrasenaIngresada = ""
-                    }) {
-                        Text("Cancelar")
                     }
                 }
-            )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = { viewModel.eliminarHistorial() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("Eliminar todo el historial", color = Color.White)
+                }
+            }
         }
+    }
+
+    if (mostrarDialogo && redSeleccionada != null) {
+        AlertDialog(
+            onDismissRequest = { mostrarDialogo = false },
+            title = { Text("Conectar a ${redSeleccionada!!.ssid}") },
+            text = {
+                OutlinedTextField(
+                    value = contrasenaIngresada,
+                    onValueChange = { contrasenaIngresada = it },
+                    label = { Text("Contraseña") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (contrasenaIngresada.isBlank()) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Introduce una contraseña válida.")
+                        }
+                    } else {
+                        viewModel.conectarARedProtegida(redSeleccionada!!.ssid, contrasenaIngresada)
+                        mostrarDialogo = false
+                        contrasenaIngresada = ""
+                    }
+                }) {
+                    Text("Conectar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    mostrarDialogo = false
+                    contrasenaIngresada = ""
+                }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }

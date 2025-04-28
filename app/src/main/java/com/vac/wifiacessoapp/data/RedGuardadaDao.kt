@@ -1,23 +1,23 @@
 package com.vac.wifiacessoapp.data
 
-import androidx.room.*
-import androidx.room.OnConflictStrategy
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
+import androidx.room.Delete
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface RedGuardadaDao {
 
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    @Insert
     suspend fun insertarRed(red: RedGuardada)
 
     @Query("SELECT * FROM redes_guardadas ORDER BY fechaConexion DESC")
-    suspend fun obtenerHistorial(): List<RedGuardada>
-
-    @Query("SELECT * FROM redes_guardadas WHERE ssid = :ssid LIMIT 1")
-    suspend fun buscarPorSsid(ssid: String): RedGuardada?
+    fun obtenerTodas(): Flow<List<RedGuardada>>
 
     @Delete
     suspend fun eliminarRed(red: RedGuardada)
 
     @Query("DELETE FROM redes_guardadas")
-    suspend fun borrarTodo()
+    suspend fun eliminarTodas()
 }

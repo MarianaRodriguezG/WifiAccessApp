@@ -13,14 +13,31 @@ import android.text.format.Formatter
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.AndroidViewModel
+import androidx.room.Room
+import com.vac.wifiacessoapp.data.AppDatabase
+import com.vac.wifiacessoapp.data.RedGuardada
+import com.vac.wifiacessoapp.data.RedGuardadaRepository
 import com.vac.wifiacessoapp.modelo.RedWifi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class WifiViewModel(application: Application) : AndroidViewModel(application) {
 
     private val contexto: Context = application.applicationContext
     private val wifiManager = contexto.getSystemService(Context.WIFI_SERVICE) as WifiManager
+
+    private val baseDatos: AppDatabase = Room.databaseBuilder(
+        contexto,
+        AppDatabase::class.java,
+        "redes_guardadas_db"
+    ).build()
+
+    private val repositorio = RedGuardadaRepository(baseDatos.redGuardadaDao())
+    private val viewModelScopeLocal = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _listaRedes = MutableStateFlow<List<RedWifi>>(emptyList())
     val listaRedes = _listaRedes.asStateFlow()
@@ -36,6 +53,9 @@ class WifiViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _redConectada = MutableStateFlow<RedWifi?>(null)
     val redConectada = _redConectada.asStateFlow()
+
+    private val _historialRedes = MutableStateFlow<List<RedGuardada>>(emptyList())
+    val historialRedes = _historialRedes.asStateFlow()
 
     init {
         actualizarEstadoWifi()
@@ -70,7 +90,6 @@ class WifiViewModel(application: Application) : AndroidViewModel(application) {
             wifiManager.startScan()
             _escaneando.value = true
 
-            // No delay aquí porque el RecyclerView se va a actualizar automáticamente
             val resultados = wifiManager.scanResults
 
             _listaRedes.value = resultados.map { scan ->
@@ -137,12 +156,43 @@ class WifiViewModel(application: Application) : AndroidViewModel(application) {
     private fun actualizarRedConectada() {
         val info = wifiManager.connectionInfo
         if (info != null && info.networkId != -1) {
-            _redConectada.value = RedWifi(
+            val red = RedWifi(
                 ssid = info.ssid.removeSurrounding("\""),
                 nivelSenal = info.rssi,
                 protegida = true,
                 tipoSeguridad = "Desconocido"
             )
+            _redConectada.value = red
+
+            // Guardar conexión en historial
+            viewModelScopeLocal.launch {
+                val redGuardada = RedGuardada(
+                    ssid = red.ssid,
+                    tipoSeguridad = red.tipoSeguridad,
+                    nivelSenal = red.nivelSenal
+                )
+                repositorio.insertar(redGuardada)
+            }
+        }
+    }
+
+    fun cargarHistorial() {
+        viewModelScopeLocal.launch {
+            repositorio.redesGuardadas.collect { redes ->
+                _historialRedes.value = redes
+            }
+        }
+    }
+
+    fun eliminarHistorial() {
+        viewModelScopeLocal.launch {
+            repositorio.eliminarTodas()
+        }
+    }
+
+    fun olvidarRed(redGuardada: RedGuardada) {
+        viewModelScopeLocal.launch {
+            repositorio.eliminar(redGuardada)
         }
     }
 

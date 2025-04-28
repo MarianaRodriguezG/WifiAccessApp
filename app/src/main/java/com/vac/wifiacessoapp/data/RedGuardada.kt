@@ -9,5 +9,5 @@ data class RedGuardada(
     val ssid: String,
     val tipoSeguridad: String,
     val nivelSenal: Int,
-    val fechaConexion: Long
+    val fechaConexion: Long = System.currentTimeMillis()
 )
