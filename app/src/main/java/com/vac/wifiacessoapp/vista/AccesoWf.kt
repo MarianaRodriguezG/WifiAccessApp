@@ -57,7 +57,7 @@ fun AccesoWf(viewModel: WifiViewModel) {
             LifecycleEventObserver { _, evento ->
                 if (evento == Lifecycle.Event.ON_RESUME) {
                     viewModel.actualizarEstadoWifi()
-                    viewModel.cargarHistorial() // 🔥 Cargar historial cada vez que regresa la app
+                    viewModel.cargarHistorial() // Cargar historial cada vez que regresa la app
                 }
             }
         )

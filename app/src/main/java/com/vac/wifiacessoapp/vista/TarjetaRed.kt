@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.dp
 import com.vac.wifiacessoapp.modelo.RedWifi
 
 @Composable
+// esta clase se utlizó en versiones anteriores a la migracion a ksp y material 3
 fun TarjetaRed(red: RedWifi, onClick: (RedWifi) -> Unit) {
     Card(
         modifier = Modifier
