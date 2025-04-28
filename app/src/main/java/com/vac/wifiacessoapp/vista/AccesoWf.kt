@@ -1,151 +1,222 @@
 package com.vac.wifiacessoapp.vista
 
-import android.annotation.SuppressLint
 import android.Manifest
-import android.content.Context
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.vac.wifiacessoapp.viewmodel.WifiViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
-@SuppressLint("MissingPermission")
 @Composable
-fun AccesoWf(wifiViewModel: WifiViewModel) {
-    val listaRedes by wifiViewModel.listaRedes.collectAsState()
-    val escaneando by wifiViewModel.escaneando.collectAsState()
-    val wifiActivo by wifiViewModel.wifiActivo.collectAsState()
-    val redConectada by wifiViewModel.redConectada.collectAsState()
+fun AccesoWf(viewModel: WifiViewModel) {
+    val contexto = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val wifiActivo by viewModel.wifiActivo.collectAsState()
+    val ubicacionActiva by viewModel.ubicacionActiva.collectAsState()
+    val listaRedes by viewModel.listaRedes.collectAsState()
+    val redConectada by viewModel.redConectada.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val contexto = LocalContext.current
 
-    var mostrarDialogoContrasena by remember { mutableStateOf(false) }
     var redSeleccionada by remember { mutableStateOf<com.vac.wifiacessoapp.modelo.RedWifi?>(null) }
-    var contrasena by remember { mutableStateOf("") }
+    var mostrarDialogo by remember { mutableStateOf(false) }
+    var contrasenaIngresada by remember { mutableStateOf("") }
 
-    val permisosLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            wifiViewModel.escanearRedes()
+    val launcherPermisos = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permisos ->
+        if (permisos.values.all { it }) {
+            viewModel.actualizarEstadoWifi()
         }
     }
 
-    LaunchedEffect(wifiActivo) {
-        if (wifiActivo) {
-            wifiViewModel.escanearRedes()
-        } else {
-            wifiViewModel.limpiarRedes()
-        }
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.addObserver(
+            LifecycleEventObserver { _, evento ->
+                if (evento == Lifecycle.Event.ON_RESUME) {
+                    viewModel.actualizarEstadoWifi()
+                }
+            }
+        )
     }
 
-    if (!wifiActivo) {
-        LaunchedEffect(snackbarHostState) {
-            snackbarHostState.showSnackbar("Activa el Wi-Fi para escanear redes")
+    LaunchedEffect(wifiActivo, ubicacionActiva) {
+        if (!wifiActivo) {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Wi-Fi desactivado. Actívalo para escanear.",
+                    actionLabel = "Ajustes"
+                )
+            }
+        } else if (!ubicacionActiva) {
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = "Ubicación desactivada. Actívala para encontrar redes.",
+                    actionLabel = "Ajustes"
+                )
+            }
         }
     }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { paddingValues ->
+    ) { padding ->
         Column(
             modifier = Modifier
-                .padding(paddingValues)
+                .padding(padding)
+                .fillMaxSize()
+                .background(Color(0xFF1976D2))
                 .padding(16.dp)
-                .fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Text(
+                text = "Redes Wi-Fi",
+                fontSize = 24.sp,
+                color = Color.White
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             Button(
                 onClick = {
-                    if (!wifiActivo) {
-                        wifiViewModel.abrirAjustesWifi(contexto)
+                    val permisosNecesarios = arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.NEARBY_WIFI_DEVICES
+                    )
+                    val faltanPermisos = permisosNecesarios.any {
+                        ContextCompat.checkSelfPermission(contexto, it) != PackageManager.PERMISSION_GRANTED
+                    }
+                    if (faltanPermisos) {
+                        launcherPermisos.launch(permisosNecesarios)
+                    } else if (!wifiActivo) {
+                        viewModel.abrirAjustesWifi(contexto)
+                    } else if (!ubicacionActiva) {
+                        viewModel.abrirAjustesUbicacion(contexto)
                     } else {
-                        permisosLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                        viewModel.escanearRedes()
                     }
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White)
             ) {
-                Text(text = if (wifiActivo) "Escanear redes" else "Activar Wi-Fi")
+                Text("Escanear redes", color = Color.Black)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             redConectada?.let { red ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0D47A1))
+                        .padding(16.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(text = "Conectado a:", style = MaterialTheme.typography.bodyMedium)
-                        Text(text = red.ssid, style = MaterialTheme.typography.titleMedium)
-                        Text(text = "Señal: ${red.nivelSenal} dBm", style = MaterialTheme.typography.bodySmall)
-                    }
+                    Text("Conectado a:", color = Color.LightGray)
+                    Text(red.ssid, color = Color.White)
+                    Text("Señal: ${red.nivelSenal} dBm", color = Color.White)
                 }
-
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            if (escaneando) {
-                Text(text = "Buscando redes...")
+            if (listaRedes.isEmpty()) {
+                Text(
+                    text = "No hay redes disponibles.",
+                    color = Color.White
+                )
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn {
                     items(listaRedes) { red ->
-                        TarjetaRed(
-                            red = red,
-                            onClick = { redClick ->
-                                if (redClick.protegida) {
-                                    redSeleccionada = redClick
-                                    mostrarDialogoContrasena = true
-                                } else {
-                                    // Aquí pondrías la conexión automática a red abierta si quieres
-                                }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF1565C0))
+                                .padding(12.dp)
+                        ) {
+                            Text(text = "SSID: ${red.ssid}", color = Color.White)
+                            Text(
+                                text = if (red.protegida) "🔒 Red protegida" else "🔓 Red abierta",
+                                color = Color.LightGray
+                            )
+                            Text(text = "Nivel de señal: ${red.nivelSenal} dBm", color = Color.White)
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Button(
+                                onClick = {
+                                    redSeleccionada = red
+                                    if (red.protegida) {
+                                        mostrarDialogo = true
+                                    } else {
+                                        viewModel.conectarARedAbierta(red.ssid)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+                            ) {
+                                Text("Conectar", color = Color.Black)
                             }
-                        )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             }
+        }
 
-            if (mostrarDialogoContrasena && redSeleccionada != null) {
-                AlertDialog(
-                    onDismissRequest = { mostrarDialogoContrasena = false },
-                    title = { Text(text = "Conectarse a ${redSeleccionada?.ssid}") },
-                    text = {
-                        TextField(
-                            value = contrasena,
-                            onValueChange = { contrasena = it },
-                            label = { Text("Contraseña") },
-                            singleLine = true
-                        )
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            mostrarDialogoContrasena = false
-                            // Lógica de conexión usando la contraseña
-                            // TODO: conectarARedProtegida(redSeleccionada!!.ssid, contrasena)
-                        }) {
-                            Text(text = "Conectar")
+        if (mostrarDialogo && redSeleccionada != null) {
+            AlertDialog(
+                onDismissRequest = { mostrarDialogo = false },
+                title = { Text("Conectar a ${redSeleccionada!!.ssid}") },
+                text = {
+                    OutlinedTextField(
+                        value = contrasenaIngresada,
+                        onValueChange = { contrasenaIngresada = it },
+                        label = { Text("Contraseña") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (contrasenaIngresada.isBlank()) {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Introduce una contraseña válida.")
+                            }
+                        } else {
+                            viewModel.conectarARedProtegida(redSeleccionada!!.ssid, contrasenaIngresada)
+                            mostrarDialogo = false
+                            contrasenaIngresada = ""
                         }
-                    },
-                    dismissButton = {
-                        Button(onClick = { mostrarDialogoContrasena = false }) {
-                            Text(text = "Cancelar")
-                        }
+                    }) {
+                        Text("Conectar")
                     }
-                )
-            }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        mostrarDialogo = false
+                        contrasenaIngresada = ""
+                    }) {
+                        Text("Cancelar")
+                    }
+                }
+            )
         }
     }
 }
